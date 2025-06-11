@@ -1,8 +1,6 @@
-import { useFetcher } from '@remix-run/react';
 import { executeQuery, QueryData } from '@/db/execute-query';
 import { LoaderError } from '@/types/loader-error';
 import { WithErrorHandling } from '@/components/hoc/error-handling-wrapper/error-handling-wrapper';
-import { useEffect } from 'react';
 import {
   SubscriptionTierChart,
   SubscriptionTierData,
@@ -18,20 +16,34 @@ import {
   AveragePlanPriceData,
   averagePlanPriceQuery,
 } from '@/routes/orgs-dashboard/components/AveragePlanPriceChart';
-import { OrganizationData, OrganizationsTable } from '@/routes/orgs-dashboard/components/OrganizationsTable';
+import {
+  OrgKeyMetrics,
+  TotalActiveUsersData,
+  TotalProductsData,
+  TotalSalesAmountData,
+  totalActiveUsersQuery,
+  totalProductsQuery,
+  totalSalesAmountQuery,
+} from '@/routes/orgs-dashboard/components/OrgKeyMetrics';
 
 export async function loader(): Promise<OrgsDashboardProps | LoaderError> {
   try {
-    const [subscriptionTiers, topOrgsByRevenue, averagePlanPrices] = await Promise.all([
+    const [subscriptionTiers, topOrgsByRevenue, averagePlanPrices, totalActiveUsers, totalProducts, totalSalesAmount] = await Promise.all([
       executeQuery<SubscriptionTierData>(subscriptionTierQuery),
       executeQuery<TopOrganizationsByRevenueData>(topOrganizationsByRevenueQuery),
       executeQuery<AveragePlanPriceData>(averagePlanPriceQuery),
+      executeQuery<TotalActiveUsersData>(totalActiveUsersQuery),
+      executeQuery<TotalProductsData>(totalProductsQuery),
+      executeQuery<TotalSalesAmountData>(totalSalesAmountQuery),
     ]);
 
     return {
       subscriptionTiers,
       topOrgsByRevenue,
       averagePlanPrices,
+      totalActiveUsers,
+      totalProducts,
+      totalSalesAmount,
     };
   } catch (error) {
     console.error('Error in organizations dashboard loader:', error);
@@ -43,28 +55,43 @@ interface OrgsDashboardProps {
   subscriptionTiers: QueryData<SubscriptionTierData[]>;
   topOrgsByRevenue: QueryData<TopOrganizationsByRevenueData[]>;
   averagePlanPrices: QueryData<AveragePlanPriceData[]>;
+  totalActiveUsers: QueryData<TotalActiveUsersData[]>;
+  totalProducts: QueryData<TotalProductsData[]>;
+  totalSalesAmount: QueryData<TotalSalesAmountData[]>;
 }
 
-export default function OrgsDashboard({ subscriptionTiers, topOrgsByRevenue, averagePlanPrices }: OrgsDashboardProps) {
-  const orgsFetcher = useFetcher<QueryData<{ organizations: OrganizationData[]; organizationsCount: number }>>();
-
-  useEffect(() => {
-    orgsFetcher.submit({ page: 1, limit: 10 }, { method: 'post', action: '/resources/orgs' });
-  }, []);
-
-  const handleOrgsTableFiltersChange = (filters: { page: number }): void => {
-    orgsFetcher.submit(
-      {
-        page: filters.page,
-        limit: 10,
-      },
-      { method: 'post', action: '/resources/orgs' },
-    );
-  };
-
+export default function OrgsDashboard({
+  subscriptionTiers,
+  topOrgsByRevenue,
+  averagePlanPrices,
+  totalActiveUsers,
+  totalProducts,
+  totalSalesAmount,
+}: OrgsDashboardProps) {
   return (
     <div className="container mx-auto py-8 space-y-8">
       <h1 className="text-3xl font-bold mb-6">Amazing Organizations Dashboard</h1>
+
+      <WithErrorHandling
+        queryData={totalActiveUsers}
+        render={(activeUsersData) => (
+          <WithErrorHandling
+            queryData={totalProducts}
+            render={(productsData) => (
+              <WithErrorHandling
+                queryData={totalSalesAmount}
+                render={(salesAmountData) => (
+                  <OrgKeyMetrics
+                    totalActiveUsers={activeUsersData}
+                    totalProducts={productsData}
+                    totalSalesAmount={salesAmountData}
+                  />
+                )}
+              />
+            )}
+          />
+        )}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <WithErrorHandling
@@ -83,18 +110,6 @@ export default function OrgsDashboard({ subscriptionTiers, topOrgsByRevenue, ave
           render={(data) => <AveragePlanPriceChart data={data} />}
         />
       </div>
-
-      <WithErrorHandling
-        queryData={orgsFetcher.data}
-        render={(orgsData) => (
-          <OrganizationsTable
-            organizations={orgsData.organizations}
-            organizationsCount={orgsData.organizationsCount}
-            isLoading={orgsFetcher.state === 'submitting'}
-            onFiltersChange={handleOrgsTableFiltersChange}
-          />
-        )}
-      />
     </div>
   );
 }
